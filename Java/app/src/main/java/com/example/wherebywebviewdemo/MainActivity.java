@@ -1,77 +1,120 @@
 package com.example.wherebywebviewdemo;
 
-import android.os.Bundle;
-
-import com.google.android.material.snackbar.Snackbar;
-
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.content.Intent;
+import android.os.Bundle;
+import android.text.Editable;
+import android.util.Patterns;
 import android.view.View;
+import android.widget.Button;
+import android.widget.Toast;
 
-import androidx.navigation.NavController;
-import androidx.navigation.Navigation;
-import androidx.navigation.ui.AppBarConfiguration;
-import androidx.navigation.ui.NavigationUI;
+import com.google.android.material.textfield.TextInputEditText;
 
-import com.example.wherebywebviewdemo.databinding.ActivityMainBinding;
-
-import android.view.Menu;
-import android.view.MenuItem;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
-    private AppBarConfiguration appBarConfiguration;
-    private ActivityMainBinding binding;
+    // ─────────────────────────────────────────────
+    // Constants
+    // ─────────────────────────────────────────────
+
+    private final String INITIAL_ROOM_URL_STRING = "https://your.whereby.room";
+    private final Map<String, String> INITIAL_ROOM_URL_PARAMS = Map.of(
+            "needancestor", "",
+            "skipMediaPermissionPrompt", ""
+    );
+
+    // ─────────────────────────────────────────────
+    // Views
+    // ─────────────────────────────────────────────
+
+    private Button activityButton;
+    private Button fragmentButton;
+    private TextInputEditText textInput;
+
+    // ─────────────────────────────────────────────
+    // Lifecycle
+    // ─────────────────────────────────────────────
+
+    public MainActivity() {
+        super(R.layout.activity_main);
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
 
-        binding = ActivityMainBinding.inflate(getLayoutInflater());
-        setContentView(binding.getRoot());
+        textInput = findViewById(R.id.textInput);
+        activityButton = findViewById(R.id.activityButton);
+        fragmentButton = findViewById(R.id.fragmentButton);
 
-        setSupportActionBar(binding.toolbar);
+        String fullUrl = UrlUtils.buildUrlWithParams(INITIAL_ROOM_URL_STRING, INITIAL_ROOM_URL_PARAMS);
+        textInput.setText(fullUrl);
 
-        NavController navController = Navigation.findNavController(this, R.id.nav_host_fragment_content_main);
-        appBarConfiguration = new AppBarConfiguration.Builder(navController.getGraph()).build();
-        NavigationUI.setupActionBarWithNavController(this, navController, appBarConfiguration);
-
-        binding.fab.setOnClickListener(new View.OnClickListener() {
+        activityButton.setOnClickListener(new View.OnClickListener() {
             @Override
-            public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                        .setAnchorView(R.id.fab)
-                        .setAction("Action", null).show();
+            public void onClick(View v) {
+                String url = getValidatedRoomUrl();
+                if (url != null) {
+                    launchWebViewActivity(url);
+                }
+            }
+        });
+
+        fragmentButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String url = getValidatedRoomUrl();
+                if (url != null) {
+                    loadWebViewFragment(url);
+                }
             }
         });
     }
 
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_main, menu);
-        return true;
+    // ─────────────────────────────────────────────
+    // Navigation
+    // ─────────────────────────────────────────────
+
+    private void launchWebViewActivity(String roomUrlString) {
+        Intent intent = new Intent(this, WebViewActivity.class);
+        intent.putExtra(Constants.ROOM_URL_STRING, roomUrlString);
+        startActivity(intent);
     }
 
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
+    private void loadWebViewFragment(String roomUrlString) {
+        WebViewFragment fragment = WebViewFragment.newInstance(roomUrlString);
 
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
-            return true;
+        getSupportFragmentManager()
+                .beginTransaction()
+                .setReorderingAllowed(true)
+                .replace(R.id.frameLayout, fragment)
+                .addToBackStack(null)
+                .commit();
+    }
+
+    // ─────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────
+
+    private @Nullable String getValidatedRoomUrl() {
+        Editable editable = textInput.getText();
+        String url = (editable != null) ? editable.toString().trim() : "";
+
+        if (url.isEmpty()) {
+            Toast.makeText(this, "Please enter a room URL", Toast.LENGTH_SHORT).show();
+            return null;
         }
 
-        return super.onOptionsItemSelected(item);
-    }
+        if (!Patterns.WEB_URL.matcher(url).matches()) {
+            Toast.makeText(this, "Please enter a valid URL", Toast.LENGTH_SHORT).show();
+            return null;
+        }
 
-    @Override
-    public boolean onSupportNavigateUp() {
-        NavController navController = Navigation.findNavController(this, R.id.nav_host_fragment_content_main);
-        return NavigationUI.navigateUp(navController, appBarConfiguration)
-                || super.onSupportNavigateUp();
+        return url;
     }
 }
