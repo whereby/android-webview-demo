@@ -3,10 +3,12 @@ package com.example.wherebywebviewdemo;
 import android.content.Intent;
 import android.os.Bundle;
 import android.webkit.WebView;
-import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 public class WebViewActivity extends AppCompatActivity {
@@ -17,7 +19,12 @@ public class WebViewActivity extends AppCompatActivity {
 
     private String roomUrlString;
     private WebView webView;
+
     private PermissionsManager permissionsManager;
+    private CustomWebChromeClient chromeClient;
+    private ActivityResultLauncher<Intent> fileDownloadPickerLauncher;
+    private ActivityResultLauncher<Intent> fileUploadPickerLauncher;
+    private @Nullable FileSaveHandler fileSaveHandler;
 
     // ─────────────────────────────────────────────
     // Lifecycle
@@ -31,8 +38,6 @@ public class WebViewActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_webview);
-
-        permissionsManager = new PermissionsManager(this);
 
         Intent intent = getIntent();
         if (intent == null) {
@@ -48,7 +53,7 @@ public class WebViewActivity extends AppCompatActivity {
             return;
         }
 
-        roomUrlString = bundle.getString(Constants.ROOM_URL_STRING);
+        roomUrlString = bundle.getString(Constants.ROOM_URL_KEY);
 
         if (roomUrlString == null || roomUrlString.trim().isEmpty()) {
             Toast.makeText(this, "Invalid or missing room URL", Toast.LENGTH_SHORT).show();
@@ -56,12 +61,43 @@ public class WebViewActivity extends AppCompatActivity {
             return;
         }
 
+        permissionsManager = new PermissionsManager(this);
+
         webView = findViewById(R.id.webView);
+
+        // Download: Register launcher for saving downloaded files
+        fileDownloadPickerLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    if (fileSaveHandler != null) {
+                        fileSaveHandler.handleFileDownloadPickerResult(result.getResultCode(), result.getData());
+                    }
+                }
+        );
+
+        fileSaveHandler = new FileSaveHandler(this, fileDownloadPickerLauncher);
+
+        // Upload: Register launcher for file chooser
+        fileUploadPickerLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        CustomWebChromeClient chromeClient = (CustomWebChromeClient) webView.getWebChromeClient();
+                        if (chromeClient != null) {
+                            chromeClient.handleFileChooserResult(result.getResultCode(), result.getData());
+                        }
+                    }
+                }
+        );
+
+        chromeClient = new CustomWebChromeClient(this);
+        chromeClient.setUploadFileChooserLauncher(fileUploadPickerLauncher);
 
         WebViewUtils.configureWebView(
                 webView,
                 this,
-                null
+                fileSaveHandler,
+                chromeClient
         );
     }
 

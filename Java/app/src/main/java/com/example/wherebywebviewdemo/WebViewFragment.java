@@ -1,13 +1,16 @@
 package com.example.wherebywebviewdemo;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebView;
-import android.webkit.WebViewClient;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 public class WebViewFragment extends Fragment {
@@ -20,6 +23,11 @@ public class WebViewFragment extends Fragment {
     private WebView webView;
     private PermissionsManager permissionsManager;
 
+    private CustomWebChromeClient chromeClient;
+    private ActivityResultLauncher<Intent> fileDownloadPickerLauncher; // download
+    private ActivityResultLauncher<Intent> fileChooserLauncher; // upload
+    private @Nullable FileSaveHandler fileSaveHandler;
+
     // ─────────────────────────────────────────────
     // Factory
     // ─────────────────────────────────────────────
@@ -27,7 +35,7 @@ public class WebViewFragment extends Fragment {
     public static WebViewFragment newInstance(String roomUrlString) {
         WebViewFragment fragment = new WebViewFragment();
         Bundle args = new Bundle();
-        args.putString(Constants.ROOM_URL_STRING, roomUrlString);
+        args.putString(Constants.ROOM_URL_KEY, roomUrlString);
         fragment.setArguments(args);
         return fragment;
     }
@@ -35,6 +43,32 @@ public class WebViewFragment extends Fragment {
     // ─────────────────────────────────────────────
     // Lifecycle
     // ─────────────────────────────────────────────
+
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        fileDownloadPickerLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    if (fileSaveHandler != null) {
+                        fileSaveHandler.handleFileDownloadPickerResult(result.getResultCode(), result.getData());
+                    }
+                }
+        );
+
+        fileChooserLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    CustomWebChromeClient chromeClient = (CustomWebChromeClient) webView.getWebChromeClient();
+                    if (chromeClient != null) {
+                        chromeClient.handleFileChooserResult(result.getResultCode(), result.getData());
+                    }
+                }
+        );
+
+        fileSaveHandler = new FileSaveHandler(this.requireActivity(), fileDownloadPickerLauncher);
+    }
 
     @Override
     public View onCreateView(
@@ -45,17 +79,21 @@ public class WebViewFragment extends Fragment {
         View view = inflater.inflate(R.layout.fragment_webview, container, false);
 
         if (getArguments() != null) {
-            roomUrlString = getArguments().getString(Constants.ROOM_URL_STRING);
+            roomUrlString = getArguments().getString(Constants.ROOM_URL_KEY);
         }
 
         permissionsManager = new PermissionsManager(requireActivity());
 
         webView = view.findViewById(R.id.webview);
 
+        chromeClient = new CustomWebChromeClient(requireActivity());
+        chromeClient.setUploadFileChooserLauncher(fileChooserLauncher);
+        
         WebViewUtils.configureWebView(
                 webView,
                 requireActivity(),
-                new WebViewClient()
+                fileSaveHandler,
+                chromeClient
         );
 
         return view;
