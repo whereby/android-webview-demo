@@ -15,8 +15,8 @@ public class WebViewUtils {
     public static void configureWebView(
             WebView webView,
             Activity activity,
-            @Nullable FileSaveHandler fileSaveHandler,
-            @Nullable CustomWebChromeClient chromeClient
+            CustomWebChromeClient chromeClient,
+            @Nullable FileSaveHandler fileSaveHandler
     ) {
         // ─────────────────────────────────────────────
         // Web settings
@@ -55,11 +55,7 @@ public class WebViewUtils {
             }
         });
 
-        if (chromeClient != null) {
-            webView.setWebChromeClient(chromeClient);
-        } else {
-            webView.setWebChromeClient(new CustomWebChromeClient(activity));
-        }
+        webView.setWebChromeClient(chromeClient);
 
         if (fileSaveHandler != null) {
             webView.addJavascriptInterface(fileSaveHandler, "fileDownloadHandler");

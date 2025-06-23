@@ -60,9 +60,8 @@ public class WebViewFragment extends Fragment {
         fileChooserLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
-                    CustomWebChromeClient chromeClient = (CustomWebChromeClient) webView.getWebChromeClient();
-                    if (chromeClient != null) {
-                        chromeClient.handleFileChooserResult(result.getResultCode(), result.getData());
+                    if (this.chromeClient != null) {
+                        this.chromeClient.handleFileChooserResult(result.getResultCode(), result.getData());
                     }
                 }
         );
@@ -86,14 +85,14 @@ public class WebViewFragment extends Fragment {
 
         webView = view.findViewById(R.id.webview);
 
-        chromeClient = new CustomWebChromeClient(requireActivity());
+        chromeClient = new CustomWebChromeClient(this.permissionsManager);
         chromeClient.setUploadFileChooserLauncher(fileChooserLauncher);
         
         WebViewUtils.configureWebView(
                 webView,
                 requireActivity(),
-                fileSaveHandler,
-                chromeClient
+                chromeClient,
+                fileSaveHandler
         );
 
         return view;
@@ -105,11 +104,7 @@ public class WebViewFragment extends Fragment {
         webView.onResume();
 
         if (webView.getUrl() == null) {
-            if (permissionsManager.isPendingPermissions()) {
-                permissionsManager.requestPermissionsIfNeeded();
-            } else {
-                webView.loadUrl(roomUrlString);
-            }
+            webView.loadUrl(roomUrlString);
         }
     }
 
@@ -138,7 +133,7 @@ public class WebViewFragment extends Fragment {
             @NonNull String[] permissions,
             @NonNull int[] grantResults
     ) {
-        if (!permissionsManager.onRequestPermissionsResult(requestCode, permissions, grantResults)) {
+        if (!permissionsManager.handleRequestPermissionsResult(requestCode, permissions, grantResults)) {
             super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         }
     }

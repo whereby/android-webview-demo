@@ -2,13 +2,22 @@ package com.example.wherebywebviewdemo;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.Manifest;
 import android.net.Uri;
+import android.os.Build;
+import android.util.Log;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 
 import androidx.activity.result.ActivityResultLauncher;
+import androidx.annotation.RequiresApi;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
+import java.util.ArrayList;
 
 public class CustomWebChromeClient extends WebChromeClient {
 
@@ -16,17 +25,18 @@ public class CustomWebChromeClient extends WebChromeClient {
     // Fields
     // ─────────────────────────────────────────────
 
-    private final Activity activity;
     private ValueCallback<Uri[]> filePathCallback;
     private ActivityResultLauncher<Intent> uploadFileChooserLauncher;
+
+    private final PermissionsManager permissionsManager;
 
     // ─────────────────────────────────────────────
     // Constructors
     // ─────────────────────────────────────────────
 
-    public CustomWebChromeClient(Activity parentActivity) {
+    public CustomWebChromeClient(PermissionsManager permissionsManager) {
         super();
-        this.activity = parentActivity;
+        this.permissionsManager = permissionsManager;
     }
 
     // ─────────────────────────────────────────────
@@ -34,18 +44,18 @@ public class CustomWebChromeClient extends WebChromeClient {
     // ─────────────────────────────────────────────
 
     /**
-     * Sets the launcher used to start the Android file chooser when uploading files.
-     */
-    public void setUploadFileChooserLauncher(ActivityResultLauncher<Intent> launcher) {
-        this.uploadFileChooserLauncher = launcher;
-    }
-
-    /**
      * Grants permissions requested by the WebView (e.g. camera, microphone).
      */
     @Override
     public void onPermissionRequest(final PermissionRequest request) {
-        activity.runOnUiThread(() -> request.grant(request.getResources()));
+        permissionsManager.checkAndRequestPermissionsForWebViewRequest(request);
+    }
+
+    /**
+     * Sets the launcher used to start the Android file chooser when uploading files.
+     */
+    public void setUploadFileChooserLauncher(ActivityResultLauncher<Intent> launcher) {
+        this.uploadFileChooserLauncher = launcher;
     }
 
     /**

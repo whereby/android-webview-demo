@@ -82,22 +82,21 @@ public class WebViewActivity extends AppCompatActivity {
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                        CustomWebChromeClient chromeClient = (CustomWebChromeClient) webView.getWebChromeClient();
-                        if (chromeClient != null) {
-                            chromeClient.handleFileChooserResult(result.getResultCode(), result.getData());
+                        if (this.chromeClient != null) {
+                            this.chromeClient.handleFileChooserResult(result.getResultCode(), result.getData());
                         }
                     }
                 }
         );
 
-        chromeClient = new CustomWebChromeClient(this);
+        chromeClient = new CustomWebChromeClient(this.permissionsManager);
         chromeClient.setUploadFileChooserLauncher(fileUploadPickerLauncher);
 
         WebViewUtils.configureWebView(
                 webView,
                 this,
-                fileSaveHandler,
-                chromeClient
+                chromeClient,
+                fileSaveHandler
         );
     }
 
@@ -107,11 +106,7 @@ public class WebViewActivity extends AppCompatActivity {
         webView.onResume();
 
         if (webView.getUrl() == null) {
-            if (permissionsManager.isPendingPermissions()) {
-                permissionsManager.requestPermissionsIfNeeded();
-            } else {
-                webView.loadUrl(roomUrlString);
-            }
+            webView.loadUrl(roomUrlString);
         }
     }
 
@@ -139,7 +134,8 @@ public class WebViewActivity extends AppCompatActivity {
             @NonNull String[] permissions,
             @NonNull int[] grantResults
     ) {
-        if (!permissionsManager.onRequestPermissionsResult(requestCode, permissions, grantResults)) {
+
+        if (!permissionsManager.handleRequestPermissionsResult(requestCode, permissions, grantResults)) {
             super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         }
     }
