@@ -8,7 +8,6 @@ import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 public class WebViewActivity extends AppCompatActivity {
@@ -24,7 +23,8 @@ public class WebViewActivity extends AppCompatActivity {
     private CustomWebChromeClient chromeClient;
     private ActivityResultLauncher<Intent> fileDownloadPickerLauncher;
     private ActivityResultLauncher<Intent> fileUploadPickerLauncher;
-    private @Nullable FileSaveHandler fileSaveHandler;
+    private FileUploadHandler fileUploadHandler;
+    private FileDownloadHandler fileDownloadHandler;
 
     // ─────────────────────────────────────────────
     // Lifecycle
@@ -69,34 +69,30 @@ public class WebViewActivity extends AppCompatActivity {
         fileDownloadPickerLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
-                    if (fileSaveHandler != null) {
-                        fileSaveHandler.handleFileDownloadPickerResult(result.getResultCode(), result.getData());
-                    }
+                    fileDownloadHandler.handleFileDownloadPickerResult(result.getResultCode(), result.getData());
                 }
         );
 
-        fileSaveHandler = new FileSaveHandler(this, fileDownloadPickerLauncher);
+        fileDownloadHandler = new FileDownloadHandler(this, fileDownloadPickerLauncher);
 
         // Upload: Register launcher for file chooser
         fileUploadPickerLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                        if (this.chromeClient != null) {
-                            this.chromeClient.handleFileChooserResult(result.getResultCode(), result.getData());
-                        }
+                        this.chromeClient.handleFileChooserResult(result.getResultCode(), result.getData());
                     }
                 }
         );
 
-        chromeClient = new CustomWebChromeClient(this.permissionsManager);
-        chromeClient.setUploadFileChooserLauncher(fileUploadPickerLauncher);
+        fileUploadHandler = new FileUploadHandler(fileUploadPickerLauncher);
+
+        chromeClient = new CustomWebChromeClient(permissionsManager, fileUploadHandler);
 
         WebViewUtils.configureWebView(
                 webView,
-                this,
                 chromeClient,
-                fileSaveHandler
+                fileDownloadHandler
         );
     }
 

@@ -2,11 +2,17 @@ package com.example.wherebywebviewdemo;
 
 import android.Manifest;
 import android.app.Activity;
+
+import androidx.core.content.ContextCompat;
+import androidx.fragment.app.Fragment;
+
+import android.content.Context;
 import android.content.pm.PackageManager;
 
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
+import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 
+import android.os.Build;
 import android.webkit.PermissionRequest;
 
 import java.util.ArrayList;
@@ -20,20 +26,22 @@ public class PermissionsManager {
 
     private static final int WEBVIEW_PERMISSION_REQUEST_CODE = 5678;
 
-    private final Activity activity;
+    private final @Nullable Activity activity;
+    private final @Nullable Fragment fragment;
     private PermissionRequest pendingWebViewRequest;
 
     // Session-scope flags to avoid repeatedly prompting after denial
     private boolean hasDeniedCameraPermission = false;
     private boolean hasDeniedMicrophonePermission = false;
 
-    /**
-     * Constructs the PermissionsManager with a reference to the calling activity.
-     *
-     * @param activity The activity context used to request permissions.
-     */
     public PermissionsManager(Activity activity) {
         this.activity = activity;
+        this.fragment = null;
+    }
+
+    public PermissionsManager(Fragment fragment) {
+        this.activity = null;
+        this.fragment = fragment;
     }
 
     /**
@@ -46,6 +54,7 @@ public class PermissionsManager {
      *
      * @param request The WebView PermissionRequest to handle.
      */
+    @RequiresApi(api = Build.VERSION_CODES.M)
     public void checkAndRequestPermissionsForWebViewRequest(PermissionRequest request) {
         boolean cameraNeeded = false;
         boolean micNeeded = false;
@@ -70,15 +79,18 @@ public class PermissionsManager {
             request.grant(request.getResources());
         } else {
             pendingWebViewRequest = request;
-            List<String> toRequest = new ArrayList<>();
-            if (cameraNeeded && !hasCamera) toRequest.add(Manifest.permission.CAMERA);
-            if (micNeeded && !hasMic) toRequest.add(Manifest.permission.RECORD_AUDIO);
+            List<String> permissionsToRequestList = new ArrayList<>();
+            if (cameraNeeded && !hasCamera) permissionsToRequestList.add(Manifest.permission.CAMERA);
+            if (micNeeded && !hasMic) permissionsToRequestList.add(Manifest.permission.RECORD_AUDIO);
 
-            ActivityCompat.requestPermissions(
-                    activity,
-                    toRequest.toArray(new String[0]),
-                    WEBVIEW_PERMISSION_REQUEST_CODE
-            );
+            String[] permissionsToRequestArray = permissionsToRequestList.toArray(new String[0]);
+            if (fragment != null) {
+                fragment.requestPermissions(permissionsToRequestArray, WEBVIEW_PERMISSION_REQUEST_CODE);
+            } else if (activity != null) {
+                activity.requestPermissions(permissionsToRequestArray, WEBVIEW_PERMISSION_REQUEST_CODE);
+            } else {
+                throw new IllegalStateException("PermissionsManager requires an activity or fragment");
+            }
         }
     }
 
@@ -125,7 +137,8 @@ public class PermissionsManager {
      * @return true if the permission is granted; false otherwise.
      */
     private boolean isPermissionGranted(String permission) {
-        return ContextCompat.checkSelfPermission(activity, permission) == PackageManager.PERMISSION_GRANTED;
+        Context context = fragment != null ? fragment.requireContext() : activity;
+        return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED;
     }
 
     /**

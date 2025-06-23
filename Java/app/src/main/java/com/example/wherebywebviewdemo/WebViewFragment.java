@@ -21,12 +21,13 @@ public class WebViewFragment extends Fragment {
 
     private String roomUrlString;
     private WebView webView;
-    private PermissionsManager permissionsManager;
 
+    private PermissionsManager permissionsManager;
     private CustomWebChromeClient chromeClient;
     private ActivityResultLauncher<Intent> fileDownloadPickerLauncher; // download
-    private ActivityResultLauncher<Intent> fileChooserLauncher; // upload
-    private @Nullable FileSaveHandler fileSaveHandler;
+    private ActivityResultLauncher<Intent> fileUploadPickerLauncher; // upload
+    private FileUploadHandler fileUploadHandler;
+    private FileDownloadHandler fileDownloadHandler;
 
     // ─────────────────────────────────────────────
     // Factory
@@ -51,22 +52,18 @@ public class WebViewFragment extends Fragment {
         fileDownloadPickerLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
-                    if (fileSaveHandler != null) {
-                        fileSaveHandler.handleFileDownloadPickerResult(result.getResultCode(), result.getData());
-                    }
+                    fileDownloadHandler.handleFileDownloadPickerResult(result.getResultCode(), result.getData());
                 }
         );
+        fileDownloadHandler = new FileDownloadHandler(this.requireActivity(), fileDownloadPickerLauncher);
 
-        fileChooserLauncher = registerForActivityResult(
+        fileUploadPickerLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
-                    if (this.chromeClient != null) {
-                        this.chromeClient.handleFileChooserResult(result.getResultCode(), result.getData());
-                    }
+                    this.chromeClient.handleFileChooserResult(result.getResultCode(), result.getData());
                 }
         );
-
-        fileSaveHandler = new FileSaveHandler(this.requireActivity(), fileDownloadPickerLauncher);
+        fileUploadHandler = new FileUploadHandler(fileUploadPickerLauncher);
     }
 
     @Override
@@ -76,23 +73,19 @@ public class WebViewFragment extends Fragment {
             Bundle savedInstanceState
     ) {
         View view = inflater.inflate(R.layout.fragment_webview, container, false);
+        webView = view.findViewById(R.id.webview);
 
         if (getArguments() != null) {
             roomUrlString = getArguments().getString(Constants.ROOM_URL_KEY);
         }
 
-        permissionsManager = new PermissionsManager(requireActivity());
+        permissionsManager = new PermissionsManager(this);
+        chromeClient = new CustomWebChromeClient(permissionsManager, fileUploadHandler);
 
-        webView = view.findViewById(R.id.webview);
-
-        chromeClient = new CustomWebChromeClient(this.permissionsManager);
-        chromeClient.setUploadFileChooserLauncher(fileChooserLauncher);
-        
         WebViewUtils.configureWebView(
                 webView,
-                requireActivity(),
                 chromeClient,
-                fileSaveHandler
+                fileDownloadHandler
         );
 
         return view;
