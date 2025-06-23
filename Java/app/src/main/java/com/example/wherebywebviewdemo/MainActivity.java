@@ -82,7 +82,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void launchWebViewActivity(String roomUrlString) {
         Intent intent = new Intent(this, WebViewActivity.class);
-        intent.putExtra(Constants.ROOM_URL_STRING, roomUrlString);
+        intent.putExtra(Constants.ROOM_URL_KEY, roomUrlString);
         startActivity(intent);
     }
 

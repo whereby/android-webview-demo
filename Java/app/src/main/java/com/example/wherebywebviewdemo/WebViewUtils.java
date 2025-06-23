@@ -6,6 +6,7 @@ import android.webkit.CookieManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 
@@ -13,8 +14,9 @@ public class WebViewUtils {
 
     public static void configureWebView(
             WebView webView,
-            Context context,
-            @Nullable WebViewClient client
+            Activity activity,
+            @Nullable FileSaveHandler fileSaveHandler,
+            @Nullable CustomWebChromeClient chromeClient
     ) {
         // ─────────────────────────────────────────────
         // Web settings
@@ -43,17 +45,52 @@ public class WebViewUtils {
         // WebView clients
         // ─────────────────────────────────────────────
 
-        if (context instanceof Activity) {
-            webView.setWebChromeClient(new CustomWebChromeClient((Activity) context));
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                // Prevent navigation inside the WebView.
+                // Feel free to add a list of allowed url, such as Whereby policy.
+                // If not set, shared files will open in a new page, resulting in the user leaving the meeting.
+                return true;
+            }
+        });
+
+        if (chromeClient != null) {
+            webView.setWebChromeClient(chromeClient);
         } else {
-            throw new IllegalArgumentException("Context must be an Activity for permission handling");
+            webView.setWebChromeClient(new CustomWebChromeClient(activity));
         }
 
-        if (client != null) {
-            webView.setWebViewClient(client);
-        } else {
-            webView.setWebViewClient(new WebViewClient());
+        if (fileSaveHandler != null) {
+            webView.addJavascriptInterface(fileSaveHandler, "fileDownloadHandler");
+
+            webView.setDownloadListener((url, userAgent, contentDisposition, mime, contentLength) -> {
+                if (url.startsWith("blob:")) {
+                    handleBlobDownload(webView, url, mime);
+                } else {
+                    Toast.makeText(activity, "Error: Url not supported for download.", Toast.LENGTH_SHORT).show();
+                }
+            });
         }
+    }
+
+    private static void handleBlobDownload(WebView webView, String blobUrl, String mime) {
+        webView.evaluateJavascript(
+                "(async function() {" +
+                        "const response = await fetch('" + blobUrl + "');" +
+                        "const blob = await response.blob();" +
+                        "const reader = new FileReader();" +
+                        "reader.onload = function() {" +
+                        "const payload = {" +
+                        "data: reader.result," +
+                        "mime: '" + mime + "'" +
+                        "};" +
+                        "window.fileDownloadHandler.handleBlobFromJs(JSON.stringify(payload));" +
+                        "};" +
+                        "reader.readAsDataURL(blob);" +
+                        "})()",
+                null
+        );
     }
 }
 
