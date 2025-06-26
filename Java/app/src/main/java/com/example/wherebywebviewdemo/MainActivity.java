@@ -21,7 +21,7 @@ public class MainActivity extends AppCompatActivity {
     // Constants
     // ─────────────────────────────────────────────
 
-    private final String INITIAL_ROOM_URL_STRING = "https://your.whereby.room";
+    private final String INITIAL_ROOM_URL_STRING = "https://yourWherebyRoomUrl";
     private final Map<String, String> INITIAL_ROOM_URL_PARAMS = Map.of(
             "needancestor", "",
             "skipMediaPermissionPrompt", ""

@@ -10,8 +10,8 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
-import android.util.Log;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebView;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -25,23 +25,74 @@ import java.io.OutputStream;
 import java.util.UUID;
 
 /**
- * FileSaveHandler is responsible for decoding Base64 blobs received from JavaScript,
+ * FileDownloadHandler is responsible for decoding Base64 blobs received from JavaScript,
  * and saving them to the device either via the media store (for images/videos) or
  * by prompting the user with a file picker (for generic files).
  */
-public class FileSaveHandler {
+public class FileDownloadHandler {
 
     // ─────────────────────────────────────────────
     // Fields
     // ─────────────────────────────────────────────
 
+    private static final String JS_INTERFACE_NAME = "fileDownloadHandler";
+
     private final Activity activity;
     private final ActivityResultLauncher<Intent> fileDownloadPickerLauncher;
     private byte[] base64DecodedFileBytes;
 
-    public FileSaveHandler(Activity activity, ActivityResultLauncher<Intent> launcher) {
+    public FileDownloadHandler(Activity activity, ActivityResultLauncher<Intent> launcher) {
         this.activity = activity;
         this.fileDownloadPickerLauncher = launcher;
+    }
+
+    /**
+     * Attaches this FileDownloadHandler to the given WebView instance by:
+     * - Registering a JavaScript interface so JavaScript can call back into
+     *   the native layer to save files.
+     * - Setting a DownloadListener that intercepts blob URL downloads
+     *   and routes them through JavaScript to be handled natively.
+     *
+     * This setup is required to support blob-based file downloads triggered
+     * from within a WebView (e.g., canvas recordings or file exports).
+     */
+    public void attachToWebView(WebView webView) {
+        webView.addJavascriptInterface(this, JS_INTERFACE_NAME);
+
+        webView.setDownloadListener((url, userAgent, contentDisposition, mime, contentLength) -> {
+            if (url.startsWith("blob:")) {
+                handleBlobDownload(webView, url, mime);
+            } else {
+                Toast.makeText(activity, "Error: Url not supported for download.", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    /**
+     * Injects JavaScript into the given WebView to fetch and decode a blob URL,
+     * convert it into a Base64 string using a FileReader, and pass the resulting
+     * payload back to the Android side via the fileDownloadHandler JavaScript interface.
+     *
+     * This is necessary because WebView's native DownloadListener cannot handle blob: URLs
+     * directly—JavaScript must be used to access the blob content.
+     */
+    private static void handleBlobDownload(WebView webView, String blobUrl, String mime) {
+        webView.evaluateJavascript(
+                "(async function() {" +
+                        "const response = await fetch('" + blobUrl + "');" +
+                        "const blob = await response.blob();" +
+                        "const reader = new FileReader();" +
+                        "reader.onload = function() {" +
+                        "const payload = {" +
+                        "data: reader.result," +
+                        "mime: '" + mime + "'" +
+                        "};" +
+                        "window." + JS_INTERFACE_NAME + ".handleBlobFromJs(JSON.stringify(payload));" +
+                        "};" +
+                        "reader.readAsDataURL(blob);" +
+                        "})()",
+                null
+        );
     }
 
     /**
@@ -139,7 +190,6 @@ public class FileSaveHandler {
     }
 
     private void presentFilePickerAndSave(String mimeType, String suggestedFilename, File tempFile, byte[] base64Data) {
-        Log.d("mimeType", "mimeType " + mimeType);
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType(mimeType);
