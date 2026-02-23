@@ -1,14 +1,15 @@
 package com.example.wherebywebviewdemo;
 
-import android.app.Activity;
+import android.annotation.SuppressLint;
 import android.webkit.CookieManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
-public class WebViewUtils {
+class WebViewUtils {
 
-    public static void configureWebView(
+    @SuppressLint("SetJavaScriptEnabled")
+    static void configureWebView(
             WebView webView,
             CustomWebChromeClient chromeClient,
             FileDownloadHandler fileDownloadHandler
@@ -52,7 +53,10 @@ public class WebViewUtils {
 
         webView.setWebChromeClient(chromeClient);
 
+        // ─────────────────────────────────────────────
+        // File download
+        // ─────────────────────────────────────────────
+
         fileDownloadHandler.attachToWebView(webView);
     }
 }
-

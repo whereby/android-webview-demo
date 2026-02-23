@@ -21,6 +21,8 @@ public class MainActivity extends AppCompatActivity {
     // Constants
     // ─────────────────────────────────────────────
 
+    private static final String TAG_ROOM_FRAGMENT = "WHEREBY_ROOM_FRAGMENT";
+
     private final String INITIAL_ROOM_URL_STRING = "https://yourWherebyRoomUrl";
     private final Map<String, String> INITIAL_ROOM_URL_PARAMS = Map.of(
             "needancestor", "",
@@ -28,11 +30,9 @@ public class MainActivity extends AppCompatActivity {
     );
 
     // ─────────────────────────────────────────────
-    // Views
+    // Fields
     // ─────────────────────────────────────────────
 
-    private Button activityButton;
-    private Button fragmentButton;
     private TextInputEditText textInput;
 
     // ─────────────────────────────────────────────
@@ -49,8 +49,8 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         textInput = findViewById(R.id.textInput);
-        activityButton = findViewById(R.id.activityButton);
-        fragmentButton = findViewById(R.id.fragmentButton);
+        Button activityButton = findViewById(R.id.activityButton);
+        Button fragmentButton = findViewById(R.id.fragmentButton);
 
         String fullUrl = UrlUtils.buildUrlWithParams(INITIAL_ROOM_URL_STRING, INITIAL_ROOM_URL_PARAMS);
         textInput.setText(fullUrl);
@@ -81,8 +81,7 @@ public class MainActivity extends AppCompatActivity {
     // ─────────────────────────────────────────────
 
     private void launchWebViewActivity(String roomUrlString) {
-        Intent intent = new Intent(this, WebViewActivity.class);
-        intent.putExtra(Constants.ROOM_URL_KEY, roomUrlString);
+        Intent intent = WebViewActivity.newIntent(this, roomUrlString);
         startActivity(intent);
     }
 
@@ -91,9 +90,7 @@ public class MainActivity extends AppCompatActivity {
 
         getSupportFragmentManager()
                 .beginTransaction()
-                .setReorderingAllowed(true)
-                .replace(R.id.frameLayout, fragment)
-                .addToBackStack(null)
+                .replace(R.id.frameLayout, fragment, TAG_ROOM_FRAGMENT)
                 .commit();
     }
 

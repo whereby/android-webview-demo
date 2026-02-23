@@ -29,7 +29,7 @@ import java.util.UUID;
  * and saving them to the device either via the media store (for images/videos) or
  * by prompting the user with a file picker (for generic files).
  */
-public class FileDownloadHandler {
+class FileDownloadHandler {
 
     // ─────────────────────────────────────────────
     // Fields
@@ -38,13 +38,30 @@ public class FileDownloadHandler {
     private static final String JS_INTERFACE_NAME = "fileDownloadHandler";
 
     private final Activity activity;
-    private final ActivityResultLauncher<Intent> fileDownloadPickerLauncher;
+    private final ActivityResultLauncher<Intent> createDocumentLauncher;
     private byte[] base64DecodedFileBytes;
 
-    public FileDownloadHandler(Activity activity, ActivityResultLauncher<Intent> launcher) {
-        this.activity = activity;
-        this.fileDownloadPickerLauncher = launcher;
+    // ─────────────────────────────────────────────
+    // Types
+    // ─────────────────────────────────────────────
+
+    private enum MediaKind {
+        IMAGE,
+        VIDEO
     }
+
+    // ─────────────────────────────────────────────
+    // Constructor
+    // ─────────────────────────────────────────────
+
+    FileDownloadHandler(Activity activity, ActivityResultLauncher<Intent> launcher) {
+        this.activity = activity;
+        this.createDocumentLauncher = launcher;
+    }
+
+    // ─────────────────────────────────────────────
+    // WebView integration
+    // ─────────────────────────────────────────────
 
     /**
      * Attaches this FileDownloadHandler to the given WebView instance by:
@@ -52,11 +69,11 @@ public class FileDownloadHandler {
      *   the native layer to save files.
      * - Setting a DownloadListener that intercepts blob URL downloads
      *   and routes them through JavaScript to be handled natively.
-     *
+     * <p>
      * This setup is required to support blob-based file downloads triggered
      * from within a WebView (e.g., canvas recordings or file exports).
      */
-    public void attachToWebView(WebView webView) {
+    void attachToWebView(WebView webView) {
         webView.addJavascriptInterface(this, JS_INTERFACE_NAME);
 
         webView.setDownloadListener((url, userAgent, contentDisposition, mime, contentLength) -> {
@@ -68,11 +85,48 @@ public class FileDownloadHandler {
         });
     }
 
+    // ─────────────────────────────────────────────
+    // JavaScript bridge
+    // ─────────────────────────────────────────────
+
+    /**
+     * Called from JavaScript to initiate saving a blob to local storage.
+     * Differentiates between media types and triggers appropriate save logic.
+     */
+    @JavascriptInterface
+    public void handleBlobFromJs(String jsonPayload) {
+        activity.runOnUiThread(() -> {
+            try {
+                JSONObject json = new JSONObject(jsonPayload);
+                String mime = json.optString("mime", "application/octet-stream");
+                String base64Data = json.getString("data");
+
+                String parsedBase64Data = base64Data.startsWith("data:") ? base64Data.split(",")[1] : base64Data;
+                byte[] fileData = Base64.decode(parsedBase64Data, Base64.DEFAULT);
+                String fileName = "file_" + UUID.randomUUID();
+
+                if (mime.startsWith("image/")) {
+                    saveMedia(MediaKind.IMAGE, fileName, fileData, mime);
+                } else if (mime.startsWith("video/")) {
+                    saveMedia(MediaKind.VIDEO, fileName, fileData, mime);
+                } else {
+                    launchSaveFileChooser(mime, fileName, fileData);
+                }
+            } catch (Exception e) {
+                Toast.makeText(activity, "Error saving file: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    // ─────────────────────────────────────────────
+    // Blob extraction (JavaScript injection)
+    // ─────────────────────────────────────────────
+
     /**
      * Injects JavaScript into the given WebView to fetch and decode a blob URL,
      * convert it into a Base64 string using a FileReader, and pass the resulting
      * payload back to the Android side via the fileDownloadHandler JavaScript interface.
-     *
+     * <p>
      * This is necessary because WebView's native DownloadListener cannot handle blob: URLs
      * directly—JavaScript must be used to access the blob content.
      */
@@ -95,114 +149,93 @@ public class FileDownloadHandler {
         );
     }
 
-    /**
-     * Called from JavaScript to initiate saving a blob to local storage.
-     * Differentiates between media types and triggers appropriate save logic.
-     */
-    @JavascriptInterface
-    public void handleBlobFromJs(String jsonPayload) {
-        activity.runOnUiThread(() -> {
-            try {
-                JSONObject json = new JSONObject(jsonPayload);
-                String mime = json.optString("mime", "application/octet-stream");
-                String base64Data = json.getString("data");
+    // ─────────────────────────────────────────────
+    // Save flows
+    // ─────────────────────────────────────────────
 
-                String parsedBase64Data = base64Data.startsWith("data:") ? base64Data.split(",")[1] : base64Data;
-                byte[] fileData = Base64.decode(parsedBase64Data, Base64.DEFAULT);
-                String fileName = "file_" + UUID.randomUUID();
+    private void saveMedia(
+            MediaKind kind,
+            String fileName,
+            byte[] data,
+            String mimeType
+    ) {
+        String fileExtension = getFileExtensionFromMimeType(mimeType);
+        String fullFileName = fileName + fileExtension;
 
-                if (mime.startsWith("image/")) {
-                    saveImageToGallery(fileName, fileData, mime);
-                } else if (mime.startsWith("video/")) {
-                    saveVideoToGallery(fileName, fileData, mime);
-                } else {
-                    File tempFile = new File(activity.getCacheDir(), UUID.randomUUID() + "_blobfile");
-                    presentFilePickerAndSave(mime, fileName, tempFile, fileData);
+        final Uri collection;
+        final String legacyDirectory;
+
+        switch (kind) {
+            case IMAGE:
+                collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+                legacyDirectory = Environment.DIRECTORY_PICTURES;
+                break;
+
+            case VIDEO:
+                collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+                legacyDirectory = Environment.DIRECTORY_MOVIES;
+                break;
+
+            default:
+                Toast.makeText(activity, "Unable to save file (unsupported type)", Toast.LENGTH_SHORT).show();
+                return;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.MediaColumns.DISPLAY_NAME, fullFileName);
+            values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
+
+            Uri uri = activity.getContentResolver().insert(collection, values);
+            if (uri == null) {
+                Toast.makeText(activity, "Unable to save file (storage unavailable)", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            try (OutputStream outputStream = activity.getContentResolver().openOutputStream(uri)) {
+                if (outputStream == null) {
+                    Toast.makeText(activity, "Unable to save file (cannot open output)", Toast.LENGTH_SHORT).show();
+                    return;
                 }
-            } catch (Exception e) {
-                Toast.makeText(activity, "Error saving file: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
-        });
-    }
 
-    // ─────────────────────────────────────────────
-    // Private Save Methods
-    // ─────────────────────────────────────────────
-
-    private void saveImageToGallery(String fileName, byte[] imageData, String mimeType) {
-        String fileExtension = getFileExtensionFromMimeType(mimeType);
-        String fullFileName = fileName + fileExtension;
-
-        ContentValues values = new ContentValues();
-        values.put(MediaStore.Images.Media.DISPLAY_NAME, fullFileName);
-        values.put(MediaStore.Images.Media.MIME_TYPE, mimeType);
-        values.put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/android-java-embedded-demo-app");
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            Uri uri = activity.getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
-            try (OutputStream outputStream = activity.getContentResolver().openOutputStream(uri)) {
-                outputStream.write(imageData);
+                outputStream.write(data);
                 outputStream.flush();
-                Toast.makeText(activity, "Image saved to gallery", Toast.LENGTH_SHORT).show();
+                Toast.makeText(activity, "Saved to device storage", Toast.LENGTH_SHORT).show();
+
             } catch (IOException e) {
-                Toast.makeText(activity, "Failed to save image: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                Toast.makeText(activity, "Unable to save file (write failed)", Toast.LENGTH_SHORT).show();
             }
+
         } else {
-            File imageFile = new File(activity.getExternalFilesDir(Environment.DIRECTORY_PICTURES), fullFileName);
-            try (FileOutputStream fos = new FileOutputStream(imageFile)) {
-                fos.write(imageData);
+            File outFile = new File(activity.getExternalFilesDir(legacyDirectory), fullFileName);
+            try (FileOutputStream fos = new FileOutputStream(outFile)) {
+                fos.write(data);
                 fos.flush();
-                Toast.makeText(activity, "Image saved successfully", Toast.LENGTH_SHORT).show();
+                Toast.makeText(activity, "Saved to device storage", Toast.LENGTH_SHORT).show();
             } catch (IOException e) {
-                Toast.makeText(activity, "Failed to save image: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                Toast.makeText(activity, "Unable to save file (write failed)", Toast.LENGTH_SHORT).show();
             }
         }
     }
 
-    private void saveVideoToGallery(String fileName, byte[] videoData, String mimeType) {
-        String fileExtension = getFileExtensionFromMimeType(mimeType);
-        String fullFileName = fileName + fileExtension;
-
-        ContentValues values = new ContentValues();
-        values.put(MediaStore.Video.Media.DISPLAY_NAME, fullFileName);
-        values.put(MediaStore.Video.Media.MIME_TYPE, mimeType);
-        values.put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/YourAppName");
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            Uri uri = activity.getContentResolver().insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values);
-            try (OutputStream outputStream = activity.getContentResolver().openOutputStream(uri)) {
-                outputStream.write(videoData);
-                outputStream.flush();
-                Toast.makeText(activity, "Video saved to gallery", Toast.LENGTH_SHORT).show();
-            } catch (IOException e) {
-                Toast.makeText(activity, "Failed to save video: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
-        } else {
-            File videoFile = new File(activity.getExternalFilesDir(Environment.DIRECTORY_MOVIES), fullFileName);
-            try (FileOutputStream fos = new FileOutputStream(videoFile)) {
-                fos.write(videoData);
-                fos.flush();
-                Toast.makeText(activity, "Video saved successfully" + videoFile.getAbsolutePath(), Toast.LENGTH_SHORT).show();
-            } catch (IOException e) {
-                Toast.makeText(activity, "Failed to save image: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
-        }
-    }
-
-    private void presentFilePickerAndSave(String mimeType, String suggestedFilename, File tempFile, byte[] base64Data) {
+    private void launchSaveFileChooser(String mimeType, String suggestedFilename, byte[] base64Data) {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType(mimeType);
         intent.putExtra(Intent.EXTRA_TITLE, suggestedFilename);
         this.base64DecodedFileBytes = base64Data;
-        fileDownloadPickerLauncher.launch(intent);
+        createDocumentLauncher.launch(intent);
     }
+
+    // ─────────────────────────────────────────────
+    // Activity result handling
+    // ─────────────────────────────────────────────
 
     /**
      * Called after user has picked a file save location. This method writes
      * the prepared byte data to the selected Uri.
      */
-    protected void handleFileDownloadPickerResult(int resultCode, Intent data) {
+    void handleFileDownloadChooserResult(int resultCode, Intent data) {
         if (resultCode == RESULT_OK && data != null) {
             Uri uri = data.getData();
             if (uri != null) {
