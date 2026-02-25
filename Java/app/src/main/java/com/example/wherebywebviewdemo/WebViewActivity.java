@@ -1,13 +1,18 @@
 package com.example.wherebywebviewdemo;
 
+import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.WebView;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 public class WebViewActivity extends AppCompatActivity {
@@ -16,15 +21,24 @@ public class WebViewActivity extends AppCompatActivity {
     // Fields
     // ─────────────────────────────────────────────
 
-    private String roomUrlString;
-    private WebView webView;
+    WebView webView;
 
+    private final static String TAG = WebViewFragment.class.getSimpleName();
+
+    private String urlString;
     private PermissionsManager permissionsManager;
-    private CustomWebChromeClient chromeClient;
-    private ActivityResultLauncher<Intent> fileDownloadPickerLauncher;
-    private ActivityResultLauncher<Intent> fileUploadPickerLauncher;
-    private FileUploadHandler fileUploadHandler;
-    private FileDownloadHandler fileDownloadHandler;
+    private FileChooserHandler fileChooserHandler; // upload
+    private FileDownloadHandler fileDownloadHandler; // download
+
+    // ─────────────────────────────────────────────
+    // Factory
+    // ─────────────────────────────────────────────
+
+    public static Intent newIntent(Context context, String roomUrlString) {
+        Intent intent = new Intent(context, WebViewActivity.class);
+        intent.putExtra(Constants.ROOM_URL_KEY, roomUrlString);
+        return intent;
+    }
 
     // ─────────────────────────────────────────────
     // Lifecycle
@@ -35,10 +49,10 @@ public class WebViewActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_webview);
 
+        // Get urlString
         Intent intent = getIntent();
         if (intent == null) {
             Toast.makeText(this, "Missing intent", Toast.LENGTH_SHORT).show();
@@ -53,42 +67,49 @@ public class WebViewActivity extends AppCompatActivity {
             return;
         }
 
-        roomUrlString = bundle.getString(Constants.ROOM_URL_KEY);
+        urlString = bundle.getString(Constants.ROOM_URL_KEY);
 
-        if (roomUrlString == null || roomUrlString.trim().isEmpty()) {
+        if (urlString == null || urlString.trim().isEmpty()) {
             Toast.makeText(this, "Invalid or missing room URL", Toast.LENGTH_SHORT).show();
             finish();
             return;
         }
 
-        permissionsManager = new PermissionsManager(this);
+        // Download files
+        ActivityResultLauncher<Intent> createDocumentLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    fileDownloadHandler.handleFileDownloadChooserResult(result.getResultCode(), result.getData());
+                }
+        );
+        fileDownloadHandler = new FileDownloadHandler(this, createDocumentLauncher);
 
+        // Upload files
+        ActivityResultLauncher<Intent> fileChooserLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    fileChooserHandler.handleResult(result.getResultCode(), result.getData());
+                }
+        );
+        fileChooserHandler = new FileChooserHandler(fileChooserLauncher);
+
+        // Permissions manager
+        ActivityResultLauncher<String[]> webViewPermissionsLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestMultiplePermissions(),
+                result -> {
+                    permissionsManager.handlePermissionsResult(result);
+                }
+        );
+        permissionsManager = new PermissionsManager(this, webViewPermissionsLauncher);
+
+        // Chrome client
+        CustomWebChromeClient chromeClient = new CustomWebChromeClient(permissionsManager, fileChooserHandler);
+
+        // Views
+        setContentView(R.layout.activity_webview);
         webView = findViewById(R.id.webView);
 
-        // Download: Register launcher for saving downloaded files
-        fileDownloadPickerLauncher = registerForActivityResult(
-                new ActivityResultContracts.StartActivityForResult(),
-                result -> {
-                    fileDownloadHandler.handleFileDownloadPickerResult(result.getResultCode(), result.getData());
-                }
-        );
-
-        fileDownloadHandler = new FileDownloadHandler(this, fileDownloadPickerLauncher);
-
-        // Upload: Register launcher for file chooser
-        fileUploadPickerLauncher = registerForActivityResult(
-                new ActivityResultContracts.StartActivityForResult(),
-                result -> {
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                        this.chromeClient.handleFileChooserResult(result.getResultCode(), result.getData());
-                    }
-                }
-        );
-
-        fileUploadHandler = new FileUploadHandler(fileUploadPickerLauncher);
-
-        chromeClient = new CustomWebChromeClient(permissionsManager, fileUploadHandler);
-
+        // Configure webView
         WebViewUtils.configureWebView(
                 webView,
                 chromeClient,
@@ -97,42 +118,33 @@ public class WebViewActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
+
+        if (webView == null) return;
+        if (urlString == null) return;
+
         webView.onResume();
 
         if (webView.getUrl() == null) {
-            webView.loadUrl(roomUrlString);
+            webView.loadUrl(urlString);
         }
     }
 
     @Override
-    protected void onPause() {
+    public void onPause() {
+        if (webView != null) {
+            webView.onPause();
+        }
         super.onPause();
-        webView.onPause();
     }
 
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         super.onDestroy();
         if (webView != null) {
             webView.destroy();
-        }
-    }
-
-    // ─────────────────────────────────────────────
-    // Permission Handling
-    // ─────────────────────────────────────────────
-
-    @Override
-    public void onRequestPermissionsResult(
-            int requestCode,
-            @NonNull String[] permissions,
-            @NonNull int[] grantResults
-    ) {
-
-        if (!permissionsManager.handleRequestPermissionsResult(requestCode, permissions, grantResults)) {
-            super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+            webView = null;
         }
     }
 }

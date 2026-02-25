@@ -1,40 +1,40 @@
 package com.example.wherebywebviewdemo;
 
 import android.content.Intent;
-import android.os.Build;
+import android.net.Uri;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 
-import androidx.annotation.RequiresApi;
+import androidx.annotation.Nullable;
 
 /**
  * CustomWebChromeClient extends WebChromeClient to handle runtime permission
  * requests (e.g., camera, microphone) and file chooser interactions for file uploads.
  */
-public class CustomWebChromeClient extends WebChromeClient {
+class CustomWebChromeClient extends WebChromeClient {
 
     // ─────────────────────────────────────────────
     // Fields
     // ─────────────────────────────────────────────
 
-    private final PermissionsManager permissionsManager;
-    private final FileUploadHandler fileUploadHandler;
+    private final @Nullable PermissionsManager permissionsManager;
+    private final @Nullable FileChooserHandler fileChooserHandler;
 
     // ─────────────────────────────────────────────
     // Constructor
     // ─────────────────────────────────────────────
 
     /**
-     * Constructs the ChromeClient with injected permission and upload file handlers.
+     * Constructs the ChromeClient with injected permission and file chooser handlers.
      *
      * @param permissionsManager Manages permission requests for camera/microphone.
-     * @param fileUploadHandler  Manages file upload chooser interaction.
+     * @param fileChooserHandler  Manages file upload chooser interaction.
      */
-    public CustomWebChromeClient(PermissionsManager permissionsManager, FileUploadHandler fileUploadHandler) {
+    CustomWebChromeClient(@Nullable PermissionsManager permissionsManager, @Nullable FileChooserHandler fileChooserHandler) {
         this.permissionsManager = permissionsManager;
-        this.fileUploadHandler = fileUploadHandler;
+        this.fileChooserHandler = fileChooserHandler;
     }
 
     // ─────────────────────────────────────────────
@@ -47,19 +47,22 @@ public class CustomWebChromeClient extends WebChromeClient {
      *
      * @param request The permission request from the WebView.
      */
-    @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     public void onPermissionRequest(final PermissionRequest request) {
+        if (permissionsManager == null) {
+            request.deny();
+            return;
+        }
         permissionsManager.checkAndRequestPermissionsForWebViewRequest(request);
     }
 
     // ─────────────────────────────────────────────
-    // File Upload Handling
+    // File Chooser Handling
     // ─────────────────────────────────────────────
 
     /**
      * Triggered by WebView when a file input element is clicked.
-     * Delegates to the FileUploadHandler to launch file chooser and track result.
+     * Delegates to the FileChooserHandler to launch file chooser and track result.
      *
      * @param webView           The WebView making the request.
      * @param filePathCallback  Callback to pass selected file(s) to WebView.
@@ -67,18 +70,11 @@ public class CustomWebChromeClient extends WebChromeClient {
      * @return true if file picker was successfully launched; false to cancel.
      */
     @Override
-    public boolean onShowFileChooser(WebView webView, ValueCallback<android.net.Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
+    public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
+        if (fileChooserHandler == null) {
+            return false;
+        }
         Intent intent = fileChooserParams.createIntent();
-        return fileUploadHandler.showFileChooser(intent, filePathCallback);
-    }
-
-    /**
-     * Should be called from the activity/fragment when file chooser result is received.
-     *
-     * @param resultCode The result code returned by the file picker.
-     * @param data       The intent containing selected file data.
-     */
-    public void handleFileChooserResult(int resultCode, Intent data) {
-        fileUploadHandler.handleFileChooserResult(resultCode, data);
+        return fileChooserHandler.launch(intent, filePathCallback);
     }
 }

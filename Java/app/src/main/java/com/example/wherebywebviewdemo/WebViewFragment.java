@@ -1,7 +1,9 @@
 package com.example.wherebywebviewdemo;
 
+import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -9,25 +11,25 @@ import android.webkit.WebView;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
+@SuppressLint("ValidFragment")
 public class WebViewFragment extends Fragment {
 
     // ─────────────────────────────────────────────
     // Fields
     // ─────────────────────────────────────────────
 
-    private String roomUrlString;
-    private WebView webView;
+    View view;
+    WebView webView;
 
+    private final static String TAG = WebViewFragment.class.getSimpleName();
+
+    private String urlString;
     private PermissionsManager permissionsManager;
-    private CustomWebChromeClient chromeClient;
-    private ActivityResultLauncher<Intent> fileDownloadPickerLauncher; // download
-    private ActivityResultLauncher<Intent> fileUploadPickerLauncher; // upload
-    private FileUploadHandler fileUploadHandler;
-    private FileDownloadHandler fileDownloadHandler;
+    private FileChooserHandler fileChooserHandler; // upload
+    private FileDownloadHandler fileDownloadHandler; // download
 
     // ─────────────────────────────────────────────
     // Factory
@@ -42,45 +44,52 @@ public class WebViewFragment extends Fragment {
     }
 
     // ─────────────────────────────────────────────
-    // Lifecycle
+    // Fragment lifecycle
     // ─────────────────────────────────────────────
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        fileDownloadPickerLauncher = registerForActivityResult(
-                new ActivityResultContracts.StartActivityForResult(),
-                result -> {
-                    fileDownloadHandler.handleFileDownloadPickerResult(result.getResultCode(), result.getData());
-                }
-        );
-        fileDownloadHandler = new FileDownloadHandler(this.requireActivity(), fileDownloadPickerLauncher);
+        // Get urlString
+        if (getArguments() != null) {
+            urlString = getArguments().getString(Constants.ROOM_URL_KEY);
+        }
 
-        fileUploadPickerLauncher = registerForActivityResult(
+        // Download files
+        ActivityResultLauncher<Intent> createDocumentLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
-                    this.chromeClient.handleFileChooserResult(result.getResultCode(), result.getData());
+                    fileDownloadHandler.handleFileDownloadChooserResult(result.getResultCode(), result.getData());
                 }
         );
-        fileUploadHandler = new FileUploadHandler(fileUploadPickerLauncher);
+        fileDownloadHandler = new FileDownloadHandler(this.requireActivity(), createDocumentLauncher);
+
+        // Upload files
+        ActivityResultLauncher<Intent> fileChooserLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    fileChooserHandler.handleResult(result.getResultCode(), result.getData());
+                }
+        );
+        fileChooserHandler = new FileChooserHandler(fileChooserLauncher);
+
+        // Permissions manager
+        ActivityResultLauncher<String[]> webViewPermissionsLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestMultiplePermissions(),
+                result -> {
+                    permissionsManager.handlePermissionsResult(result);
+                }
+        );
+        permissionsManager = new PermissionsManager(this, webViewPermissionsLauncher);
     }
 
     @Override
-    public View onCreateView(
-            LayoutInflater inflater,
-            ViewGroup container,
-            Bundle savedInstanceState
-    ) {
-        View view = inflater.inflate(R.layout.fragment_webview, container, false);
-        webView = view.findViewById(R.id.webview);
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        view = inflater.inflate(R.layout.fragment_webview, container, false);
+        webView = view.findViewById(R.id.webView);
 
-        if (getArguments() != null) {
-            roomUrlString = getArguments().getString(Constants.ROOM_URL_KEY);
-        }
-
-        permissionsManager = new PermissionsManager(this);
-        chromeClient = new CustomWebChromeClient(permissionsManager, fileUploadHandler);
+        CustomWebChromeClient chromeClient = new CustomWebChromeClient(permissionsManager, fileChooserHandler);
 
         WebViewUtils.configureWebView(
                 webView,
@@ -94,17 +103,23 @@ public class WebViewFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
+
+        if (webView == null) return;
+        if (urlString == null) return;
+
         webView.onResume();
 
         if (webView.getUrl() == null) {
-            webView.loadUrl(roomUrlString);
+            webView.loadUrl(urlString);
         }
     }
 
     @Override
     public void onPause() {
+        if (webView != null) {
+            webView.onPause();
+        }
         super.onPause();
-        webView.onPause();
     }
 
     @Override
@@ -116,18 +131,4 @@ public class WebViewFragment extends Fragment {
         }
     }
 
-    // ─────────────────────────────────────────────
-    // Permission Handling
-    // ─────────────────────────────────────────────
-
-    @Override
-    public void onRequestPermissionsResult(
-            int requestCode,
-            @NonNull String[] permissions,
-            @NonNull int[] grantResults
-    ) {
-        if (!permissionsManager.handleRequestPermissionsResult(requestCode, permissions, grantResults)) {
-            super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        }
-    }
 }
